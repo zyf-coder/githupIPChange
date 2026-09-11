@@ -64,7 +64,7 @@ namespace GitHubHostsAuto
         private const string HostsPath = @"C:\Windows\System32\drivers\etc\hosts";
         private const string AppTitle = "GitHub 自动刷新";
         private const string CurlPath = @"C:\Windows\System32\curl.exe";
-        private const string Version = "1.3.2";
+        private const string Version = "1.3.3";
         private const int IntervalSec = 30;
 
         private static readonly string[] ProbeIps =
@@ -187,12 +187,14 @@ namespace GitHubHostsAuto
             {
                 g.SmoothingMode = SmoothingMode.AntiAlias;
                 g.Clear(Color.Transparent);
-                using (var path = RoundRect(new Rectangle(2, 2, 60, 60), 14))
+                using (var path = RoundRect(new Rectangle(2, 2, 60, 60), 12))
                 using (var b = new SolidBrush(Color.FromArgb(24, 26, 32)))
                     g.FillPath(b, path);
                 using (var b = new SolidBrush(CBlue))
-                    g.FillEllipse(b, 14, 14, 36, 36);
-                TextRenderer.DrawText(g, "G", new Font("Segoe UI", 18f, FontStyle.Bold),
+                    g.FillEllipse(b, 13, 13, 38, 38);
+                TextRenderer.DrawText(
+                    g, "G",
+                    new Font("Segoe UI", 16f, FontStyle.Bold),
                     new Rectangle(0, 0, 64, 64), Color.White,
                     TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
             }
