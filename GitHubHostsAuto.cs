@@ -5,10 +5,8 @@ using System.Drawing.Drawing2D;
 using System.IO;
 using System.Linq;
 using System.Net;
-using System.Net.Security;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
-using System.Security.Authentication;
 using System.Security.Principal;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -40,7 +38,6 @@ namespace GitHubHostsAuto
                 Application.EnableVisualStyles();
                 Application.SetCompatibleTextRenderingDefault(false);
                 ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12;
-                ServicePointManager.DefaultConnectionLimit = 32;
 
                 using (var app = new TrayApp())
                 {
@@ -67,6 +64,7 @@ namespace GitHubHostsAuto
         private const string HostsPath = @"C:\Windows\System32\drivers\etc\hosts";
         private const string AppTitle = "GitHub 自动刷新";
         private const string CurlPath = @"C:\Windows\System32\curl.exe";
+        private const string Version = "1.2.0";
         private const int IntervalSec = 180;
 
         private static readonly string[] ProbeIps =
@@ -82,28 +80,27 @@ namespace GitHubHostsAuto
             "185.199.108.133","185.199.109.133","185.199.110.133","185.199.111.133"
         };
 
-        private readonly NotifyIcon _notify;
-        private readonly System.Windows.Forms.Timer _timer;
-        private readonly Form _form;
-        private readonly Label _lblIp, _lblHealth, _lblMeta, _lblHint;
-        private readonly Panel _badge;
-        private readonly Button _btnRefresh, _btnLog, _btnHide;
-        private readonly ToolStripMenuItem _miStatus, _miAutoStart;
-        private readonly string _logPath, _statePath, _dataDir;
-        private readonly Icon _appIcon;
-        private bool _checking, _exit;
-
-        // colors
         private static readonly Color CBg = Color.FromArgb(250, 250, 251);
         private static readonly Color CHeader = Color.FromArgb(36, 41, 47);
         private static readonly Color CText = Color.FromArgb(36, 41, 47);
         private static readonly Color CMuted = Color.FromArgb(110, 118, 129);
         private static readonly Color COk = Color.FromArgb(26, 127, 55);
         private static readonly Color CBad = Color.FromArgb(207, 34, 46);
-        private static readonly Color CBtn = Color.FromArgb(36, 41, 47);
+        private static readonly Color CWarn = Color.FromArgb(130, 100, 0);
         private static readonly Color CBlue = Color.FromArgb(88, 166, 255);
-        private static readonly Color CCard = Color.White;
         private static readonly Color CBorder = Color.FromArgb(209, 217, 224);
+
+        private readonly NotifyIcon _notify;
+        private readonly System.Windows.Forms.Timer _timer;
+        private readonly Form _form;
+        private readonly TabControl _tabs;
+        private readonly Label _lblIp, _lblHealth, _lblMeta, _lblProgress;
+        private readonly Panel _badge;
+        private readonly Button _btnRefresh, _btnLog, _btnHide;
+        private readonly ToolStripMenuItem _miStatus, _miAutoStart;
+        private readonly string _logPath, _statePath, _dataDir;
+        private readonly Icon _appIcon;
+        private bool _checking, _exit;
 
         public TrayApp()
         {
@@ -113,33 +110,39 @@ namespace GitHubHostsAuto
             Directory.CreateDirectory(_dataDir);
             _logPath = Path.Combine(_dataDir, "github-hosts.log");
             _statePath = Path.Combine(_dataDir, "state.json");
-
             _appIcon = CreateIcon();
-            _form = BuildForm();
-            _lblIp = FindLabel(_form, "lblIp");
-            _lblHealth = FindLabel(_form, "lblHealth");
-            _lblMeta = FindLabel(_form, "lblMeta");
-            _lblHint = FindLabel(_form, "lblHint");
-            _badge = FindPanel(_form, "badge");
-            _btnRefresh = FindButton(_form, "btnRefresh");
-            _btnLog = FindButton(_form, "btnLog");
-            _btnHide = FindButton(_form, "btnHide");
+
+            Button btnRefresh, btnLog, btnHide;
+            Label lblIp, lblHealth, lblMeta, lblProgress;
+            Panel badge;
+            TabControl tabs;
+            _form = BuildForm(out tabs, out lblIp, out lblHealth, out lblMeta,
+                out lblProgress, out badge, out btnRefresh, out btnLog, out btnHide);
+            _tabs = tabs;
+            _lblIp = lblIp;
+            _lblHealth = lblHealth;
+            _lblMeta = lblMeta;
+            _lblProgress = lblProgress;
+            _badge = badge;
+            _btnRefresh = btnRefresh;
+            _btnLog = btnLog;
+            _btnHide = btnHide;
 
             ContextMenuStrip menu = BuildMenu(out _miStatus, out _miAutoStart);
 
             _notify = new NotifyIcon
             {
                 Icon = _appIcon,
-                Text = AppTitle,
+                Text = AppTitle + " v" + Version,
                 Visible = true,
                 ContextMenuStrip = menu
             };
-            _notify.DoubleClick += (s, e) => ToggleForm();
-            _notify.BalloonTipClicked += (s, e) => ShowForm();
+            _notify.DoubleClick += delegate { ToggleForm(); };
+            _notify.BalloonTipClicked += delegate { ShowForm(); };
 
-            _btnHide.Click += (s, e) => _form.Hide();
-            _btnLog.Click += (s, e) => OpenLog();
-            _btnRefresh.Click += async (s, e) => await RefreshAsync(false);
+            _btnHide.Click += delegate { _form.Hide(); };
+            _btnLog.Click += delegate { OpenLog(); };
+            _btnRefresh.Click += async delegate { await RefreshAsync(false); };
 
             _form.FormClosing += (s, e) =>
             {
@@ -153,15 +156,15 @@ namespace GitHubHostsAuto
             };
 
             _timer = new System.Windows.Forms.Timer { Interval = IntervalSec * 1000 };
-            _timer.Tick += async (s, e) => await TickAsync();
+            _timer.Tick += async delegate { await TickAsync(); };
             _timer.Start();
 
             if (!IsAdmin())
                 Balloon("未以管理员运行，无法自动修改 hosts。", ToolTipIcon.Warning);
 
-            Log("started admin=" + IsAdmin() + " curl=" + File.Exists(CurlPath));
-            var st = CaptureStatus();
-            UpdateUi(st);
+            Log("started v" + Version + " admin=" + IsAdmin() + " curl=" + File.Exists(CurlPath));
+            var st0 = CaptureStatus();
+            UpdateUi(st0);
             _form.Show();
         }
 
@@ -176,43 +179,6 @@ namespace GitHubHostsAuto
             }
             base.Dispose(disposing);
         }
-
-        // ---------- find controls ----------
-
-        private static Label FindLabel(Control root, string tag)
-        {
-            foreach (Control c in root.Controls)
-            {
-                if (c.Name == tag && c is Label) return (Label)c;
-                var sub = FindLabel(c, tag);
-                if (sub != null) return sub;
-            }
-            return null;
-        }
-
-        private static Button FindButton(Control root, string tag)
-        {
-            foreach (Control c in root.Controls)
-            {
-                if (c.Name == tag && c is Button) return (Button)c;
-                var sub = FindButton(c, tag);
-                if (sub != null) return sub;
-            }
-            return null;
-        }
-
-        private static Panel FindPanel(Control root, string tag)
-        {
-            foreach (Control c in root.Controls)
-            {
-                if (c.Name == tag && c is Panel) return (Panel)c;
-                var sub = FindPanel(c, tag);
-                if (sub != null) return sub;
-            }
-            return null;
-        }
-
-        // ---------- icon ----------
 
         private static Icon CreateIcon()
         {
@@ -252,16 +218,37 @@ namespace GitHubHostsAuto
         [DllImport("user32.dll")]
         private static extern bool DestroyIcon(IntPtr hIcon);
 
-        // ---------- UI ----------
-
-        private Form BuildForm()
+        private static Button MakeBtn(string text, bool primary)
         {
-            int W = 560;
-            int H = 500;
+            var b = new Button
+            {
+                Text = text,
+                Height = 40,
+                FlatStyle = FlatStyle.Flat,
+                Cursor = Cursors.Hand,
+                Font = new Font("Microsoft YaHei UI", 10f, FontStyle.Bold),
+                BackColor = primary ? CHeader : Color.White,
+                ForeColor = primary ? Color.White : CText
+            };
+            b.FlatAppearance.BorderSize = primary ? 0 : 1;
+            b.FlatAppearance.BorderColor = CBorder;
+            b.FlatAppearance.MouseOverBackColor = primary
+                ? Color.FromArgb(56, 62, 70)
+                : Color.FromArgb(240, 243, 246);
+            return b;
+        }
+
+        private Form BuildForm(
+            out TabControl tabs,
+            out Label lblIp, out Label lblHealth, out Label lblMeta, out Label lblProgress,
+            out Panel badge,
+            out Button btnRefresh, out Button btnLog, out Button btnHide)
+        {
+            // client area large enough for header + tabs + padding; no overlap
             var f = new Form
             {
-                Text = AppTitle,
-                ClientSize = new Size(W, H),
+                Text = AppTitle + " v" + Version,
+                ClientSize = new Size(580, 560),
                 StartPosition = FormStartPosition.CenterScreen,
                 FormBorderStyle = FormBorderStyle.FixedSingle,
                 MaximizeBox = false,
@@ -271,40 +258,48 @@ namespace GitHubHostsAuto
                 ShowInTaskbar = true
             };
 
-            // header
+            // header (absolute)
             var header = new Panel
             {
-                Location = new Point(0, 0),
-                Size = new Size(W, 78),
+                Bounds = new Rectangle(0, 0, 580, 80),
                 BackColor = CHeader
             };
-            header.Controls.Add(new Label
+            var t1 = new Label
             {
                 Text = "GitHub Hosts 自动刷新",
                 AutoSize = true,
-                Location = new Point(24, 16),
+                Location = new Point(24, 14),
                 Font = new Font("Microsoft YaHei UI", 14f, FontStyle.Bold),
                 ForeColor = Color.White
-            });
-            header.Controls.Add(new Label
+            };
+            var t2 = new Label
             {
-                Text = "自动探测可用 IP · 失效自动切换 · 托盘常驻",
+                Text = "v" + Version + "  ·  自动探测 IP  ·  失效自动切换  ·  托盘常驻",
                 AutoSize = true,
                 Location = new Point(24, 48),
                 Font = new Font("Microsoft YaHei UI", 9f),
                 ForeColor = Color.FromArgb(170, 178, 190)
-            });
+            };
+            header.Controls.Add(t1);
+            header.Controls.Add(t2);
             f.Controls.Add(header);
 
-            int left = 24;
-            int cardW = W - 48;
+            // tabs
+            tabs = new TabControl
+            {
+                Bounds = new Rectangle(20, 96, 540, 440),
+                Font = new Font("Microsoft YaHei UI", 10f)
+            };
 
-            // status card
+            // ---- tab 状态 ----
+            var tabStatus = new TabPage("状态");
+            tabStatus.BackColor = CBg;
+            tabStatus.Padding = new Padding(12);
+
             var card = new Panel
             {
-                Location = new Point(left, 98),
-                Size = new Size(cardW, 160),
-                BackColor = CCard
+                Bounds = new Rectangle(16, 16, 490, 170),
+                BackColor = Color.White
             };
             card.Paint += (s, e) =>
             {
@@ -316,12 +311,10 @@ namespace GitHubHostsAuto
                 Text = "当前 github.com",
                 AutoSize = true,
                 Location = new Point(16, 12),
-                Font = new Font("Microsoft YaHei UI", 9f),
                 ForeColor = CMuted
             });
-            var lblIp = new Label
+            lblIp = new Label
             {
-                Name = "lblIp",
                 Text = "检测中…",
                 AutoSize = true,
                 Location = new Point(16, 36),
@@ -330,14 +323,12 @@ namespace GitHubHostsAuto
             };
             card.Controls.Add(lblIp);
 
-            var badge = new Panel
+            Panel badgeLocal = new Panel
             {
-                Name = "badge",
-                Location = new Point(16, 84),
-                Size = new Size(cardW - 32, 58),
+                Bounds = new Rectangle(16, 90, 458, 62),
                 BackColor = Color.FromArgb(246, 248, 250)
             };
-            badge.Paint += (s, e) =>
+            badgeLocal.Paint += (s, e) =>
             {
                 var p = (Panel)s;
                 using (var path = RoundRect(new Rectangle(0, 0, p.Width - 1, p.Height - 1), 8))
@@ -349,104 +340,122 @@ namespace GitHubHostsAuto
                 Name = "dot",
                 Text = "●",
                 AutoSize = true,
-                Location = new Point(14, 18),
+                Location = new Point(16, 20),
                 Font = new Font("Segoe UI", 12f),
                 ForeColor = CMuted
             };
-            badge.Controls.Add(dot);
-            var lblHealth = new Label
+            badgeLocal.Controls.Add(dot);
+            lblHealth = new Label
             {
-                Name = "lblHealth",
                 Text = "正在检测…",
                 AutoSize = true,
-                MaximumSize = new Size(cardW - 70, 44),
-                Location = new Point(40, 14),
-                Font = new Font("Microsoft YaHei UI", 10.5f, FontStyle.Bold),
+                MaximumSize = new Size(400, 40),
+                Location = new Point(42, 16),
+                Font = new Font("Microsoft YaHei UI", 11f, FontStyle.Bold),
                 ForeColor = CMuted
             };
-            badge.Controls.Add(lblHealth);
-            card.Controls.Add(badge);
-            f.Controls.Add(card);
+            badgeLocal.Controls.Add(lblHealth);
+            card.Controls.Add(badgeLocal);
+            badge = badgeLocal;
+            tabStatus.Controls.Add(card);
 
-            // meta
-            var lblMeta = new Label
+            lblMeta = new Label
             {
-                Name = "lblMeta",
-                Text = "",
-                Location = new Point(left, 272),
-                Size = new Size(cardW, 70),
+                Bounds = new Rectangle(16, 200, 490, 72),
                 Font = new Font("Microsoft YaHei UI", 9.5f),
-                ForeColor = CMuted
+                ForeColor = CMuted,
+                Text = ""
             };
-            f.Controls.Add(lblMeta);
+            tabStatus.Controls.Add(lblMeta);
 
-            // buttons
-            _btnRefreshFlat = MakeBtn("立即刷新", true);
-            _btnRefreshFlat.Name = "btnRefresh";
-            _btnRefreshFlat.Location = new Point(left, 356);
-            _btnRefreshFlat.Size = new Size(150, 40);
+            btnRefresh = MakeBtn("立即刷新", true);
+            btnRefresh.Bounds = new Rectangle(16, 286, 150, 42);
+            btnLog = MakeBtn("打开日志", false);
+            btnLog.Bounds = new Rectangle(180, 286, 150, 42);
+            btnHide = MakeBtn("隐藏到托盘", false);
+            btnHide.Bounds = new Rectangle(344, 286, 150, 42);
+            tabStatus.Controls.Add(btnRefresh);
+            tabStatus.Controls.Add(btnLog);
+            tabStatus.Controls.Add(btnHide);
 
-            _btnLogFlat = MakeBtn("打开日志", false);
-            _btnLogFlat.Name = "btnLog";
-            _btnLogFlat.Location = new Point(left + 166, 356);
-            _btnLogFlat.Size = new Size(150, 40);
-
-            _btnHideFlat = MakeBtn("隐藏到托盘", false);
-            _btnHideFlat.Name = "btnHide";
-            _btnHideFlat.Location = new Point(left + 332, 356);
-            _btnHideFlat.Size = new Size(150, 40);
-
-            f.Controls.Add(_btnRefreshFlat);
-            f.Controls.Add(_btnLogFlat);
-            f.Controls.Add(_btnHideFlat);
+            lblProgress = new Label
+            {
+                Bounds = new Rectangle(16, 340, 490, 56),
+                Font = new Font("Microsoft YaHei UI", 9.5f),
+                ForeColor = CBlue,
+                Text = "提示：关闭窗口会缩到托盘，不会退出。"
+            };
+            tabStatus.Controls.Add(lblProgress);
 
             var hint = new Label
             {
-                Name = "lblHint",
-                Text = "关闭窗口不会退出，会缩到右下角托盘继续监控。\r\n退出请用托盘菜单「退出」。如需开机自启，在托盘菜单勾选。",
-                Location = new Point(left, 414),
-                Size = new Size(cardW, 56),
-                Font = new Font("Microsoft YaHei UI", 9f),
-                ForeColor = CMuted
+                Bounds = new Rectangle(16, 400, 490, 36),
+                Font = new Font("Microsoft YaHei UI", 8.5f),
+                ForeColor = CMuted,
+                Text = "退出请用托盘菜单「退出」。开机自启：托盘菜单勾选「开机自动启动」。"
             };
-            f.Controls.Add(hint);
+            tabStatus.Controls.Add(hint);
+
+            // ---- tab 版本说明 ----
+            var tabAbout = new TabPage("版本说明");
+            tabAbout.BackColor = CBg;
+            var about = new TextBox
+            {
+                Multiline = true,
+                ReadOnly = true,
+                ScrollBars = ScrollBars.Vertical,
+                BorderStyle = BorderStyle.None,
+                BackColor = CBg,
+                ForeColor = CText,
+                Font = new Font("Microsoft YaHei UI", 10f),
+                Bounds = new Rectangle(20, 16, 490, 380),
+                Text =
+                    "当前版本：v" + Version + "\r\n\r\n" +
+                    "【v1.2.0】\r\n" +
+                    "· 界面改为「状态 / 版本说明」双页签，修复遮挡\r\n" +
+                    "· 「立即刷新」增加进度提示，避免看起来像没反应\r\n" +
+                    "· 健康检查全面改用 curl，减少误报\r\n" +
+                    "· 窗口加高，按钮不再被裁切\r\n\r\n" +
+                    "【v1.1.0】\r\n" +
+                    "· 现代化深色顶栏界面\r\n" +
+                    "· 自动探测可用 GitHub IP 并写入 hosts\r\n" +
+                    "· 托盘常驻，关闭窗口不退出\r\n" +
+                    "· 支持开机自启\r\n\r\n" +
+                    "【v1.0.0】\r\n" +
+                    "· 首个单文件桌面版\r\n\r\n" +
+                    "【工作原理】\r\n" +
+                    "1. 用 curl 探测候选 IP（网页 + git 协议）\r\n" +
+                    "2. 拒绝返回 200 但内容是假 OK 的中间盒\r\n" +
+                    "3. 写入 hosts 的 # BEGIN GITHUB FIX 段\r\n" +
+                    "4. flushdns 后确认 git ls-remote 可用\r\n\r\n" +
+                    "【说明】\r\n" +
+                    "· 修改 hosts 需要管理员权限\r\n" +
+                    "· IP 会被网络间歇干扰，不是永久方案\r\n" +
+                    "· 长期稳定建议使用代理\r\n"
+            };
+            tabAbout.Controls.Add(about);
+
+            tabs.TabPages.Add(tabStatus);
+            tabs.TabPages.Add(tabAbout);
+            f.Controls.Add(tabs);
 
             return f;
         }
 
-        // temp holders so BuildForm can set fields before we assign private readonly
-        private Button _btnRefreshFlat, _btnLogFlat, _btnHideFlat;
-
-        private static Button MakeBtn(string text, bool primary)
-        {
-            var b = new Button
-            {
-                Text = text,
-                Height = 36,
-                FlatStyle = FlatStyle.Flat,
-                Cursor = Cursors.Hand,
-                Font = new Font("Microsoft YaHei UI", 9.5f, FontStyle.Bold),
-                BackColor = primary ? CBtn : Color.White,
-                ForeColor = primary ? Color.White : CText
-            };
-            b.FlatAppearance.BorderSize = primary ? 0 : 1;
-            b.FlatAppearance.BorderColor = CBorder;
-            b.FlatAppearance.MouseOverBackColor = primary
-                ? Color.FromArgb(56, 62, 70)
-                : Color.FromArgb(246, 248, 250);
-            return b;
-        }
-
         private ContextMenuStrip BuildMenu(out ToolStripMenuItem miStatus, out ToolStripMenuItem miAutoStart)
         {
-            var menu = new ContextMenuStrip { BackColor = Color.White, Font = new Font("Microsoft YaHei UI", 9f) };
+            var menu = new ContextMenuStrip
+            {
+                BackColor = Color.White,
+                Font = new Font("Microsoft YaHei UI", 9f)
+            };
 
             var miShow = new ToolStripMenuItem("打开面板");
-            miShow.Click += (s, e) => ShowForm();
+            miShow.Click += delegate { ShowForm(); };
             menu.Items.Add(miShow);
 
             var miRefresh = new ToolStripMenuItem("立即刷新 IP");
-            miRefresh.Click += async (s, e) => await RefreshAsync(false);
+            miRefresh.Click += async delegate { await RefreshAsync(false); };
             menu.Items.Add(miRefresh);
 
             menu.Items.Add(new ToolStripSeparator());
@@ -454,17 +463,25 @@ namespace GitHubHostsAuto
             menu.Items.Add(miStatus);
 
             miAutoStart = new ToolStripMenuItem("开机自动启动") { CheckOnClick = true };
-            miAutoStart.Checked = AutostartEnabled();
-            miAutoStart.Click += (s, e) => ToggleAutostart();
+            miAutoStart.Checked = File.Exists(StartupLink());
+            miAutoStart.Click += delegate { ToggleAutostart(); };
             menu.Items.Add(miAutoStart);
 
+            var miAbout = new ToolStripMenuItem("版本 v" + Version);
+            miAbout.Click += delegate
+            {
+                ShowForm();
+                try { _tabs.SelectedIndex = 1; } catch { }
+            };
+            menu.Items.Add(miAbout);
+
             var miLog = new ToolStripMenuItem("打开日志");
-            miLog.Click += (s, e) => OpenLog();
+            miLog.Click += delegate { OpenLog(); };
             menu.Items.Add(miLog);
 
             menu.Items.Add(new ToolStripSeparator());
             var miExit = new ToolStripMenuItem("退出");
-            miExit.Click += (s, e) => ExitApp();
+            miExit.Click += delegate { ExitApp(); };
             menu.Items.Add(miExit);
             return menu;
         }
@@ -511,7 +528,30 @@ namespace GitHubHostsAuto
                 MessageBox.Show("日志还不存在。", AppTitle, MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
-        // ---------- network ----------
+        private void SetProgress(string text, Color color)
+        {
+            if (_lblProgress == null || _lblProgress.IsDisposed) return;
+            if (_lblProgress.InvokeRequired)
+            {
+                try { _lblProgress.BeginInvoke(new Action(() => SetProgress(text, color))); } catch { }
+                return;
+            }
+            _lblProgress.Text = text;
+            _lblProgress.ForeColor = color;
+        }
+
+        private void SetBusy(bool busy, string btnText)
+        {
+            if (_btnRefresh == null || _btnRefresh.IsDisposed) return;
+            if (_btnRefresh.InvokeRequired)
+            {
+                try { _btnRefresh.BeginInvoke(new Action(() => SetBusy(busy, btnText))); } catch { }
+                return;
+            }
+            _btnRefresh.Enabled = !busy;
+            _btnRefresh.Text = btnText;
+            _btnRefresh.BackColor = busy ? Color.FromArgb(120, 125, 135) : CHeader;
+        }
 
         private static bool IsAdmin()
         {
@@ -528,56 +568,6 @@ namespace GitHubHostsAuto
                 return ip == null ? null : ip.ToString();
             }
             catch { return null; }
-        }
-
-        /// <summary>System health: real HTTPS to github.com via hosts/DNS (most reliable).</summary>
-        private static bool TryHttpGet(string url, int timeoutMs, out int status, out int length)
-        {
-            status = 0;
-            length = 0;
-            try
-            {
-                var req = (HttpWebRequest)WebRequest.Create(url);
-                req.Method = "GET";
-                req.Timeout = timeoutMs;
-                req.ReadWriteTimeout = timeoutMs;
-                req.AllowAutoRedirect = true;
-                req.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) GitHubHostsAuto/1.0";
-                req.Accept = "*/*";
-                using (var resp = (HttpWebResponse)req.GetResponse())
-                {
-                    status = (int)resp.StatusCode;
-                    using (var rs = resp.GetResponseStream())
-                    {
-                        if (rs != null)
-                        {
-                            var buf = new byte[8192];
-                            int read;
-                            while ((read = rs.Read(buf, 0, buf.Length)) > 0)
-                            {
-                                length += read;
-                                if (length > 400000) break;
-                            }
-                        }
-                    }
-                    return status >= 200 && status < 400;
-                }
-            }
-            catch (WebException wex)
-            {
-                try
-                {
-                    var hr = wex.Response as HttpWebResponse;
-                    if (hr != null)
-                    {
-                        status = (int)hr.StatusCode;
-                        return status >= 200 && status < 400;
-                    }
-                }
-                catch { }
-                return false;
-            }
-            catch { return false; }
         }
 
         private static string Curl(string args, int timeoutMs)
@@ -606,35 +596,25 @@ namespace GitHubHostsAuto
                     return stdout;
                 }
             }
-            catch
-            {
-                return null;
-            }
+            catch { return null; }
         }
 
         private static bool TestGitReal(string ip)
         {
-            // Prefer curl --resolve for IP probe
             string body = Curl(
                 "-sS --http1.1 --connect-timeout 3 --max-time 6 " +
                 "-A \"git/2.22.0.windows.1\" " +
                 "--resolve github.com:443:" + ip + " " +
                 "\"https://github.com/git/git.git/info/refs?service=git-upload-pack\"",
                 10000);
-            if (!string.IsNullOrEmpty(body) && body.Contains("service=git-upload-pack"))
-                return true;
-
-            // Fallback: if probing the currently resolved IP, use normal HTTP
-            return false;
+            return !string.IsNullOrEmpty(body) && body.Contains("service=git-upload-pack");
         }
 
         private static bool TestHtmlReal(string ip)
         {
             string body = Curl(
-                "-sS --http1.1 --connect-timeout 3 --max-time 8 " +
-                "-A \"Mozilla/5.0\" " +
-                "--resolve github.com:443:" + ip + " " +
-                "https://github.com/",
+                "-sS --http1.1 --connect-timeout 3 --max-time 8 -A \"Mozilla/5.0\" " +
+                "--resolve github.com:443:" + ip + " https://github.com/",
                 12000);
             return !string.IsNullOrEmpty(body) && body.Length > 4000;
         }
@@ -649,18 +629,19 @@ namespace GitHubHostsAuto
             return !string.IsNullOrEmpty(body) && body.Length > 50;
         }
 
-        /// <summary>Health check via curl (hosts/DNS). HttpWebRequest often fails on this network.</summary>
         private bool IsSystemHealthy(out string detail)
         {
-            string htmlCode = Curl("-sS --http1.1 --connect-timeout 4 --max-time 10 -A \"Mozilla/5.0\" -o NUL -w %{http_code} https://github.com/", 12000);
-            htmlCode = (htmlCode ?? "").Trim();
+            string htmlCode = (Curl(
+                "-sS --http1.1 --connect-timeout 4 --max-time 10 -A \"Mozilla/5.0\" -o NUL -w %{http_code} https://github.com/",
+                12000) ?? "").Trim();
             if (htmlCode != "200" && htmlCode != "301" && htmlCode != "302")
             {
                 detail = "网页 HTTPS 失败 (http=" + (htmlCode.Length == 0 ? "timeout" : htmlCode) + ")";
                 return false;
             }
-            string apiCode = Curl("-sS --http1.1 --connect-timeout 3 --max-time 8 -o NUL -w %{http_code} https://api.github.com/", 10000);
-            apiCode = (apiCode ?? "").Trim();
+            string apiCode = (Curl(
+                "-sS --http1.1 --connect-timeout 3 --max-time 8 -o NUL -w %{http_code} https://api.github.com/",
+                10000) ?? "").Trim();
             if (apiCode != "200")
             {
                 detail = "API 失败 (http=" + (apiCode.Length == 0 ? "timeout" : apiCode) + ")";
@@ -682,12 +663,6 @@ namespace GitHubHostsAuto
             {
                 if (ip == exclude) continue;
                 if (TestGitReal(ip) && TestHtmlReal(ip)) return ip;
-            }
-            foreach (var ip in ProbeIps)
-            {
-                if (ip == exclude) continue;
-                // allow web-only if git probe flaky but web is real HTML
-                if (TestHtmlReal(ip) && TestGitReal(ip)) return ip;
             }
             foreach (var ip in ProbeIps)
             {
@@ -749,6 +724,7 @@ namespace GitHubHostsAuto
                     CreateNoWindow = true
                 });
                 if (p != null) p.WaitForExit(5000);
+                Thread.Sleep(400);
             }
             catch (Exception ex)
             {
@@ -811,12 +787,13 @@ namespace GitHubHostsAuto
             }
 
             _lblMeta.Text = string.Format(
-                "权限：{0}    自动切换：{1} 次    间隔：{2} 秒{3}最后检查：{4:HH:mm:ss}",
+                "权限：{0}    自动切换：{1} 次    检查间隔：{2} 秒{3}最后检查：{4:HH:mm:ss}    版本：v{5}",
                 st.Admin ? "管理员" : "非管理员",
                 st.RefreshCount,
                 IntervalSec,
                 Environment.NewLine,
-                st.Time);
+                st.Time,
+                Version);
 
             if (_miStatus != null && !_miStatus.IsDisposed)
                 _miStatus.Text = st.Healthy ? "状态: 正常 " + st.Ip : "状态: 异常";
@@ -828,25 +805,29 @@ namespace GitHubHostsAuto
             _checking = true;
             try
             {
-                if (_btnRefresh != null && !_btnRefresh.IsDisposed)
-                    _btnRefresh.Enabled = false;
+                SetBusy(true, "刷新中…");
+                SetProgress("正在探测可用 GitHub IP，请稍候…", CBlue);
+                if (!silent)
+                {
+                    try { _tabs.SelectedIndex = 0; } catch { }
+                }
 
-                bool wrote = false;
                 string newIp = null;
+                string msg = null;
                 await Task.Run(() =>
                 {
                     if (!IsAdmin())
                     {
-                        if (!silent)
-                            MessageBox.Show("写入 hosts 需要管理员权限。请右键 exe →「以管理员身份运行」。",
-                                "权限不足", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        msg = "需要管理员权限才能写入 hosts，请右键「以管理员身份运行」。";
+                        Log("refresh denied: not admin");
                         return;
                     }
 
                     string detail;
                     if (IsSystemHealthy(out detail))
                     {
-                        Log("still healthy, skip refresh");
+                        msg = "当前已正常（" + CurrentIp() + "），无需切换。";
+                        Log("already healthy, skip");
                         return;
                     }
 
@@ -855,35 +836,43 @@ namespace GitHubHostsAuto
                     newIp = FindGitHubIp(cur);
                     if (newIp == null)
                     {
+                        msg = "未能找到可用 IP，请检查网络后重试。";
                         Log("no working IP");
-                        if (!silent)
-                            MessageBox.Show("未能找到可用的 github.com IP。\n请检查网络或稍后重试。",
-                                AppTitle, MessageBoxButtons.OK, MessageBoxIcon.Error);
                         return;
                     }
                     string raw = FindRawIp();
-                    wrote = WriteHosts(newIp, raw);
-                    if (wrote)
+                    if (WriteHosts(newIp, raw))
                     {
                         IncRefreshCount();
+                        msg = "已切换 IP：" + cur + " → " + newIp;
                         Log("switched " + cur + " -> " + newIp);
+                    }
+                    else
+                    {
+                        msg = "写入 hosts 失败，请检查安全软件是否拦截。";
+                        Log("write hosts failed");
                     }
                 });
 
                 var st = CaptureStatus();
                 UpdateUi(st);
+
+                if (st.Healthy)
+                    SetProgress(msg ?? ("完成。当前 IP：" + st.Ip), COk);
+                else
+                    SetProgress(msg ?? ("仍异常：" + st.Detail), CBad);
+
                 if (!silent)
                 {
                     if (st.Healthy)
-                        Balloon(string.IsNullOrEmpty(newIp) ? "当前已正常" : "已切换 IP: " + newIp, ToolTipIcon.Info);
+                        Balloon(msg ?? "刷新完成", ToolTipIcon.Info);
                     else
-                        Balloon("刷新后仍异常，请打开日志查看", ToolTipIcon.Warning);
+                        Balloon(msg ?? "刷新后仍异常，请看进度提示", ToolTipIcon.Warning);
                 }
             }
             finally
             {
-                if (_btnRefresh != null && !_btnRefresh.IsDisposed)
-                    _btnRefresh.Enabled = true;
+                SetBusy(false, "立即刷新");
                 _checking = false;
             }
         }
@@ -899,10 +888,12 @@ namespace GitHubHostsAuto
                 if (!st.Healthy)
                 {
                     Log("tick fail (" + st.Detail + "), auto refresh", "WARN");
+                    SetProgress("定时检查异常，正在自动切换…", CWarn);
                     _checking = false;
                     await RefreshAsync(true);
                     return;
                 }
+                SetProgress("提示：关闭窗口会缩到托盘，不会退出。", CBlue);
             }
             catch (Exception ex)
             {
@@ -914,8 +905,6 @@ namespace GitHubHostsAuto
             }
         }
 
-        // ---------- autostart / state / log ----------
-
         private string ExePath()
         {
             return Application.ExecutablePath;
@@ -926,11 +915,6 @@ namespace GitHubHostsAuto
             return Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.Startup),
                 "GitHubHostsAuto.lnk");
-        }
-
-        private bool AutostartEnabled()
-        {
-            return File.Exists(StartupLink());
         }
 
         private void ToggleAutostart()
