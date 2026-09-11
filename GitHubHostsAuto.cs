@@ -64,7 +64,7 @@ namespace GitHubHostsAuto
         private const string HostsPath = @"C:\Windows\System32\drivers\etc\hosts";
         private const string AppTitle = "GitHub 自动刷新";
         private const string CurlPath = @"C:\Windows\System32\curl.exe";
-        private const string Version = "1.3.0";
+        private const string Version = "1.3.1";
         private const int IntervalSec = 30;
 
         private static readonly string[] ProbeIps =
@@ -238,205 +238,200 @@ namespace GitHubHostsAuto
             return b;
         }
 
-        private Form BuildForm(
-            out TabControl tabs,
-            out Label lblIp, out Label lblHealth, out Label lblMeta, out Label lblProgress,
-            out Panel badge,
-            out Button btnRefresh, out Button btnLog, out Button btnHide)
-        {
-            // generous spacing; header never collides with tabs
-            int W = 640;
-            int H = 640;
-            var f = new Form
-            {
-                Text = AppTitle + " v" + Version,
-                ClientSize = new Size(W, H),
-                StartPosition = FormStartPosition.CenterScreen,
-                FormBorderStyle = FormBorderStyle.FixedSingle,
-                MaximizeBox = false,
-                BackColor = CBg,
-                Font = new Font("Microsoft YaHei UI", 10f),
-                Icon = _appIcon,
-                ShowInTaskbar = true
-            };
-
-            var header = new Panel
-            {
-                Bounds = new Rectangle(0, 0, W, 100),
-                BackColor = CHeader
-            };
-            header.Controls.Add(new Label
-            {
-                Text = "GitHub Hosts 自动刷新",
-                AutoSize = true,
-                Location = new Point(28, 18),
-                Font = new Font("Microsoft YaHei UI", 15f, FontStyle.Bold),
-                ForeColor = Color.White
-            });
-            header.Controls.Add(new Label
-            {
-                Text = "v" + Version + "  ·  每 " + IntervalSec + " 秒自动检查  ·  失效自动切换",
-                AutoSize = true,
-                Location = new Point(28, 58),
-                Font = new Font("Microsoft YaHei UI", 9.5f),
-                ForeColor = Color.FromArgb(170, 178, 190)
-            });
-            f.Controls.Add(header);
-
-            tabs = new TabControl
-            {
-                Bounds = new Rectangle(24, 116, W - 48, H - 140),
-                Font = new Font("Microsoft YaHei UI", 10.5f),
-                Padding = new Point(16, 6)
-            };
-
-            var tabStatus = new TabPage("状态");
-            tabStatus.BackColor = CBg;
-            tabStatus.Padding = new Padding(16);
-
-            int innerW = W - 48 - 32 - 8; // tab client approx
-
-            var card = new Panel
-            {
-                Bounds = new Rectangle(20, 20, innerW - 8, 190),
-                BackColor = Color.White
-            };
-            card.Paint += (s, e) =>
-            {
-                var p = (Panel)s;
-                using (var pen = new Pen(CBorder))
-                    e.Graphics.DrawRectangle(pen, 0, 0, p.Width - 1, p.Height - 1);
-            };
-            card.Controls.Add(new Label
-            {
-                Text = "当前 github.com",
-                AutoSize = true,
-                Location = new Point(20, 16),
-                ForeColor = CMuted
-            });
-            lblIp = new Label
-            {
-                Text = "检测中…",
-                AutoSize = true,
-                Location = new Point(20, 44),
-                Font = new Font("Consolas", 18f, FontStyle.Bold),
-                ForeColor = CText
-            };
-            card.Controls.Add(lblIp);
-
-            Panel badgeLocal = new Panel
-            {
-                Bounds = new Rectangle(20, 100, card.Width - 40, 70),
-                BackColor = Color.FromArgb(246, 248, 250)
-            };
-            badgeLocal.Paint += (s, e) =>
-            {
-                var p = (Panel)s;
-                using (var path = RoundRect(new Rectangle(0, 0, p.Width - 1, p.Height - 1), 10))
-                using (var pen = new Pen(CBorder))
-                    e.Graphics.DrawPath(pen, path);
-            };
-            var dot = new Label
-            {
-                Name = "dot",
-                Text = "●",
-                AutoSize = true,
-                Location = new Point(18, 24),
-                Font = new Font("Segoe UI", 14f),
-                ForeColor = CMuted
-            };
-            badgeLocal.Controls.Add(dot);
-            lblHealth = new Label
-            {
-                Text = "正在检测…",
-                AutoSize = false,
-                Bounds = new Rectangle(48, 14, badgeLocal.Width - 60, 44),
-                Font = new Font("Microsoft YaHei UI", 11f, FontStyle.Bold),
-                ForeColor = CMuted
-            };
-            badgeLocal.Controls.Add(lblHealth);
-            card.Controls.Add(badgeLocal);
-            badge = badgeLocal;
-            tabStatus.Controls.Add(card);
-
-            lblMeta = new Label
-            {
-                Bounds = new Rectangle(20, 226, innerW - 8, 90),
-                Font = new Font("Microsoft YaHei UI", 10f),
-                ForeColor = CMuted,
-                Text = ""
-            };
-            tabStatus.Controls.Add(lblMeta);
-
-            int btnY = 330;
-            int btnW = (innerW - 8 - 24) / 3;
-            btnRefresh = MakeBtn("立即刷新", true);
-            btnRefresh.Bounds = new Rectangle(20, btnY, btnW, 44);
-            btnLog = MakeBtn("日志", false);
-            btnLog.Bounds = new Rectangle(20 + btnW + 12, btnY, btnW, 44);
-            btnHide = MakeBtn("隐藏到托盘", false);
-            btnHide.Bounds = new Rectangle(20 + (btnW + 12) * 2, btnY, btnW, 44);
-            tabStatus.Controls.Add(btnRefresh);
-            tabStatus.Controls.Add(btnLog);
-            tabStatus.Controls.Add(btnHide);
-
-            lblProgress = new Label
-            {
-                Bounds = new Rectangle(20, btnY + 60, innerW - 8, 80),
-                Font = new Font("Microsoft YaHei UI", 10f),
-                ForeColor = CBlue,
-                Text = "提示：关闭窗口会缩到托盘，不会退出。"
-            };
-            tabStatus.Controls.Add(lblProgress);
-
-            var hint = new Label
-            {
-                Bounds = new Rectangle(20, btnY + 150, innerW - 8, 50),
-                Font = new Font("Microsoft YaHei UI", 9f),
-                ForeColor = CMuted,
-                Text = "退出：托盘菜单「退出」。开机自启：托盘菜单勾选「开机自动启动」。"
-            };
-            tabStatus.Controls.Add(hint);
-
-            var tabAbout = new TabPage("版本说明");
-            tabAbout.BackColor = CBg;
-            var about = new TextBox
-            {
-                Multiline = true,
-                ReadOnly = true,
-                ScrollBars = ScrollBars.Vertical,
-                BorderStyle = BorderStyle.None,
-                BackColor = CBg,
-                ForeColor = CText,
-                Font = new Font("Microsoft YaHei UI", 10.5f),
-                Bounds = new Rectangle(20, 16, innerW - 12, H - 180),
-                Text =
-                    "当前版本：v" + Version + "\r\n\r\n" +
-                    "【v1.3.0】\r\n" +
-                    "· 布局放宽，修复文字遮挡\r\n" +
-                    "· 自动检查间隔改为 30 秒\r\n" +
-                    "· 「立即刷新」强制重新探测并切换 IP（不再因已正常而跳过）\r\n" +
-                    "· 进度提示显示更完整\r\n\r\n" +
-                    "【v1.2.0】\r\n" +
-                    "· 状态 / 版本说明双页签\r\n" +
-                    "· 刷新进度反馈\r\n" +
-                    "· 健康检查改用 curl\r\n\r\n" +
-                    "【v1.1.0】\r\n" +
-                    "· 托盘常驻、自动探测 IP、写入 hosts\r\n\r\n" +
-                    "【v1.0.0】\r\n" +
-                    "· 首个单文件桌面版\r\n\r\n" +
-                    "【说明】\r\n" +
-                    "· hosts 生效后 github.com 会解析到固定 IP\r\n" +
-                    "· 「立即刷新」会重新扫描并尝试切换到其它可用 IP\r\n" +
-                    "· 修改 hosts 需要管理员权限\r\n"
-            };
-            tabAbout.Controls.Add(about);
-
-            tabs.TabPages.Add(tabStatus);
-            tabs.TabPages.Add(tabAbout);
-            f.Controls.Add(tabs);
-            return f;
-        }
+        private Form BuildForm(
+            out TabControl tabs,
+            out Label lblIp, out Label lblHealth, out Label lblMeta, out Label lblProgress,
+            out Panel badge,
+            out Button btnRefresh, out Button btnLog, out Button btnHide)
+        {
+            int W = 700;
+            int H = 780;
+            var f = new Form
+            {
+                Text = AppTitle + " v" + Version,
+                ClientSize = new Size(W, H),
+                StartPosition = FormStartPosition.CenterScreen,
+                FormBorderStyle = FormBorderStyle.FixedSingle,
+                MaximizeBox = false,
+                BackColor = CBg,
+                Font = new Font("Microsoft YaHei UI", 10f),
+                Icon = _appIcon,
+                ShowInTaskbar = true
+            };
+
+            var header = new Panel
+            {
+                Bounds = new Rectangle(0, 0, W, 118),
+                BackColor = CHeader
+            };
+            header.Controls.Add(new Label
+            {
+                Text = "GitHub Hosts 自动刷新",
+                AutoSize = true,
+                Location = new Point(28, 22),
+                Font = new Font("Microsoft YaHei UI", 15f, FontStyle.Bold),
+                ForeColor = Color.White
+            });
+            header.Controls.Add(new Label
+            {
+                Text = "v" + Version + "   ·   每 " + IntervalSec + " 秒自动检查   ·   失效自动切换",
+                AutoSize = true,
+                Location = new Point(28, 68),
+                Font = new Font("Microsoft YaHei UI", 9.5f),
+                ForeColor = Color.FromArgb(180, 188, 200)
+            });
+            f.Controls.Add(header);
+
+            tabs = new TabControl
+            {
+                Bounds = new Rectangle(20, 134, W - 40, H - 154),
+                Font = new Font("Microsoft YaHei UI", 10.5f),
+                Padding = new Point(18, 8)
+            };
+
+            var tabStatus = new TabPage("状态");
+            tabStatus.BackColor = CBg;
+
+            int pageW = tabs.Width - 12;
+            int pageH = tabs.Height - 40;
+            int pad = 18;
+
+            var card = new Panel
+            {
+                Bounds = new Rectangle(pad, pad, pageW - pad * 2, 210),
+                BackColor = Color.White
+            };
+            card.Paint += (s, e) =>
+            {
+                var p = (Panel)s;
+                using (var pen = new Pen(CBorder))
+                    e.Graphics.DrawRectangle(pen, 0, 0, p.Width - 1, p.Height - 1);
+            };
+            card.Controls.Add(new Label
+            {
+                Text = "当前 github.com",
+                AutoSize = true,
+                Location = new Point(22, 18),
+                Font = new Font("Microsoft YaHei UI", 9.5f),
+                ForeColor = CMuted
+            });
+            lblIp = new Label
+            {
+                Text = "检测中…",
+                AutoSize = true,
+                Location = new Point(22, 46),
+                Font = new Font("Consolas", 18f, FontStyle.Bold),
+                ForeColor = CText
+            };
+            card.Controls.Add(lblIp);
+
+            Panel badgeLocal = new Panel
+            {
+                Bounds = new Rectangle(22, 110, card.Width - 44, 78),
+                BackColor = Color.FromArgb(246, 248, 250)
+            };
+            badgeLocal.Paint += (s, e) =>
+            {
+                var p = (Panel)s;
+                using (var path = RoundRect(new Rectangle(0, 0, p.Width - 1, p.Height - 1), 10))
+                using (var pen = new Pen(CBorder))
+                    e.Graphics.DrawPath(pen, path);
+            };
+            var dot = new Label
+            {
+                Name = "dot",
+                Text = "●",
+                AutoSize = true,
+                Location = new Point(16, 26),
+                Font = new Font("Segoe UI", 13f),
+                ForeColor = CMuted
+            };
+            badgeLocal.Controls.Add(dot);
+            lblHealth = new Label
+            {
+                Text = "正在检测…",
+                AutoSize = false,
+                Bounds = new Rectangle(44, 12, badgeLocal.Width - 60, 56),
+                Font = new Font("Microsoft YaHei UI", 10.5f, FontStyle.Bold),
+                ForeColor = CMuted
+            };
+            badgeLocal.Controls.Add(lblHealth);
+            card.Controls.Add(badgeLocal);
+            badge = badgeLocal;
+            tabStatus.Controls.Add(card);
+
+            lblMeta = new Label
+            {
+                Bounds = new Rectangle(pad, 246, pageW - pad * 2, 78),
+                Font = new Font("Microsoft YaHei UI", 10f),
+                ForeColor = CMuted,
+                Text = ""
+            };
+            tabStatus.Controls.Add(lblMeta);
+
+            int btnY = 336;
+            int totalBtnW = pageW - pad * 2;
+            int gap = 10;
+            int btnW = (totalBtnW - gap * 2) / 3;
+            btnRefresh = MakeBtn("立即刷新", true);
+            btnRefresh.Bounds = new Rectangle(pad, btnY, btnW, 46);
+            btnLog = MakeBtn("日志", false);
+            btnLog.Bounds = new Rectangle(pad + btnW + gap, btnY, btnW, 46);
+            btnHide = MakeBtn("隐藏到托盘", false);
+            btnHide.Bounds = new Rectangle(pad + (btnW + gap) * 2, btnY, btnW, 46);
+            tabStatus.Controls.Add(btnRefresh);
+            tabStatus.Controls.Add(btnLog);
+            tabStatus.Controls.Add(btnHide);
+
+            lblProgress = new Label
+            {
+                Bounds = new Rectangle(pad, btnY + 64, totalBtnW, 100),
+                Font = new Font("Microsoft YaHei UI", 10f),
+                ForeColor = CBlue,
+                Text = "提示：关闭窗口会缩到托盘，不会退出。"
+            };
+            tabStatus.Controls.Add(lblProgress);
+
+            var hint = new Label
+            {
+                Bounds = new Rectangle(pad, btnY + 176, totalBtnW, 56),
+                Font = new Font("Microsoft YaHei UI", 9f),
+                ForeColor = CMuted,
+                Text = "退出：托盘菜单「退出」。开机自启：托盘菜单「开机自动启动」。"
+            };
+            tabStatus.Controls.Add(hint);
+
+            var tabAbout = new TabPage("版本说明");
+            tabAbout.BackColor = CBg;
+            var about = new TextBox
+            {
+                Multiline = true,
+                ReadOnly = true,
+                ScrollBars = ScrollBars.Vertical,
+                BorderStyle = BorderStyle.None,
+                BackColor = CBg,
+                ForeColor = CText,
+                Font = new Font("Microsoft YaHei UI", 10.5f),
+                Bounds = new Rectangle(18, 12, pageW - 24, pageH - 20),
+                Text =
+                    "当前版本：v" + Version + "\r\n\r\n" +
+                    "【v1.3.1】\r\n" +
+                    "· 统一修复顶栏、状态徽章、底部进度文字被裁切\r\n" +
+                    "· 窗口加大到 700x780，间距统一\r\n\r\n" +
+                    "【v1.3.0】\r\n" +
+                    "· 强制刷新切换 IP\r\n" +
+                    "· 自动检查间隔 30 秒\r\n\r\n" +
+                    "【v1.2.0】状态 / 版本说明双页签\r\n" +
+                    "【v1.1.0】托盘常驻、自动探测 IP\r\n" +
+                    "【v1.0.0】首个单文件桌面版\r\n"
+            };
+            tabAbout.Controls.Add(about);
+
+            tabs.TabPages.Add(tabStatus);
+            tabs.TabPages.Add(tabAbout);
+            f.Controls.Add(tabs);
+            return f;
+        }
 
         private ContextMenuStrip BuildMenu(out ToolStripMenuItem miStatus, out ToolStripMenuItem miAutoStart)
         {
@@ -783,11 +778,10 @@ namespace GitHubHostsAuto
             }
 
             _lblMeta.Text = string.Format(
-                "权限：{0}    自动切换：{1} 次    检查间隔：{2} 秒{3}最后检查：{4:HH:mm:ss}    版本：v{5}",
+                "权限：{0}　　自动切换：{1} 次　　间隔：{2} 秒\r\n最后检查：{3:HH:mm:ss}　　版本：v{4}",
                 st.Admin ? "管理员" : "非管理员",
                 st.RefreshCount,
                 IntervalSec,
-                Environment.NewLine,
                 st.Time,
                 Version);
 
