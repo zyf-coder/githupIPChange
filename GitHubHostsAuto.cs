@@ -64,8 +64,8 @@ namespace GitHubHostsAuto
         private const string HostsPath = @"C:\Windows\System32\drivers\etc\hosts";
         private const string AppTitle = "GitHub 自动刷新";
         private const string CurlPath = @"C:\Windows\System32\curl.exe";
-        private const string Version = "1.2.0";
-        private const int IntervalSec = 180;
+        private const string Version = "1.3.0";
+        private const int IntervalSec = 30;
 
         private static readonly string[] ProbeIps =
         {
@@ -244,94 +244,95 @@ namespace GitHubHostsAuto
             out Panel badge,
             out Button btnRefresh, out Button btnLog, out Button btnHide)
         {
-            // client area large enough for header + tabs + padding; no overlap
+            // generous spacing; header never collides with tabs
+            int W = 640;
+            int H = 640;
             var f = new Form
             {
                 Text = AppTitle + " v" + Version,
-                ClientSize = new Size(580, 560),
+                ClientSize = new Size(W, H),
                 StartPosition = FormStartPosition.CenterScreen,
                 FormBorderStyle = FormBorderStyle.FixedSingle,
                 MaximizeBox = false,
                 BackColor = CBg,
-                Font = new Font("Microsoft YaHei UI", 9.5f),
+                Font = new Font("Microsoft YaHei UI", 10f),
                 Icon = _appIcon,
                 ShowInTaskbar = true
             };
 
-            // header (absolute)
             var header = new Panel
             {
-                Bounds = new Rectangle(0, 0, 580, 80),
+                Bounds = new Rectangle(0, 0, W, 100),
                 BackColor = CHeader
             };
-            var t1 = new Label
+            header.Controls.Add(new Label
             {
                 Text = "GitHub Hosts 自动刷新",
                 AutoSize = true,
-                Location = new Point(24, 14),
-                Font = new Font("Microsoft YaHei UI", 14f, FontStyle.Bold),
+                Location = new Point(28, 18),
+                Font = new Font("Microsoft YaHei UI", 15f, FontStyle.Bold),
                 ForeColor = Color.White
-            };
-            var t2 = new Label
+            });
+            header.Controls.Add(new Label
             {
-                Text = "v" + Version + "  ·  自动探测 IP  ·  失效自动切换  ·  托盘常驻",
+                Text = "v" + Version + "  ·  每 " + IntervalSec + " 秒自动检查  ·  失效自动切换",
                 AutoSize = true,
-                Location = new Point(24, 48),
-                Font = new Font("Microsoft YaHei UI", 9f),
+                Location = new Point(28, 58),
+                Font = new Font("Microsoft YaHei UI", 9.5f),
                 ForeColor = Color.FromArgb(170, 178, 190)
-            };
-            header.Controls.Add(t1);
-            header.Controls.Add(t2);
+            });
             f.Controls.Add(header);
 
-            // tabs
             tabs = new TabControl
             {
-                Bounds = new Rectangle(20, 96, 540, 440),
-                Font = new Font("Microsoft YaHei UI", 10f)
+                Bounds = new Rectangle(24, 116, W - 48, H - 140),
+                Font = new Font("Microsoft YaHei UI", 10.5f),
+                Padding = new Point(16, 6)
             };
 
-            // ---- tab 状态 ----
             var tabStatus = new TabPage("状态");
             tabStatus.BackColor = CBg;
-            tabStatus.Padding = new Padding(12);
+            tabStatus.Padding = new Padding(16);
+
+            int innerW = W - 48 - 32 - 8; // tab client approx
 
             var card = new Panel
             {
-                Bounds = new Rectangle(16, 16, 490, 170),
+                Bounds = new Rectangle(20, 20, innerW - 8, 190),
                 BackColor = Color.White
             };
             card.Paint += (s, e) =>
             {
+                var p = (Panel)s;
                 using (var pen = new Pen(CBorder))
-                    e.Graphics.DrawRectangle(pen, 0, 0, card.Width - 1, card.Height - 1);
+                    e.Graphics.DrawRectangle(pen, 0, 0, p.Width - 1, p.Height - 1);
             };
             card.Controls.Add(new Label
             {
                 Text = "当前 github.com",
                 AutoSize = true,
-                Location = new Point(16, 12),
+                Location = new Point(20, 16),
                 ForeColor = CMuted
             });
             lblIp = new Label
             {
                 Text = "检测中…",
                 AutoSize = true,
-                Location = new Point(16, 36),
-                Font = new Font("Consolas", 16f, FontStyle.Bold),
+                Location = new Point(20, 44),
+                Font = new Font("Consolas", 18f, FontStyle.Bold),
                 ForeColor = CText
             };
             card.Controls.Add(lblIp);
 
             Panel badgeLocal = new Panel
             {
-                Bounds = new Rectangle(16, 90, 458, 62),
+                Bounds = new Rectangle(20, 100, card.Width - 40, 70),
                 BackColor = Color.FromArgb(246, 248, 250)
             };
             badgeLocal.Paint += (s, e) =>
             {
                 var p = (Panel)s;
-                using (var path = RoundRect(new Rectangle(0, 0, p.Width - 1, p.Height - 1), 8))
+                using (var path = RoundRect(new Rectangle(0, 0, p.Width - 1, p.Height - 1), 10))
                 using (var pen = new Pen(CBorder))
                     e.Graphics.DrawPath(pen, path);
             };
@@ -340,17 +341,16 @@ namespace GitHubHostsAuto
                 Name = "dot",
                 Text = "●",
                 AutoSize = true,
-                Location = new Point(16, 20),
-                Font = new Font("Segoe UI", 12f),
+                Location = new Point(18, 24),
+                Font = new Font("Segoe UI", 14f),
                 ForeColor = CMuted
             };
             badgeLocal.Controls.Add(dot);
             lblHealth = new Label
             {
                 Text = "正在检测…",
-                AutoSize = true,
-                MaximumSize = new Size(400, 40),
-                Location = new Point(42, 16),
+                AutoSize = false,
+                Bounds = new Rectangle(48, 14, badgeLocal.Width - 60, 44),
                 Font = new Font("Microsoft YaHei UI", 11f, FontStyle.Bold),
                 ForeColor = CMuted
             };
@@ -361,27 +361,29 @@ namespace GitHubHostsAuto
 
             lblMeta = new Label
             {
-                Bounds = new Rectangle(16, 200, 490, 72),
-                Font = new Font("Microsoft YaHei UI", 9.5f),
+                Bounds = new Rectangle(20, 226, innerW - 8, 90),
+                Font = new Font("Microsoft YaHei UI", 10f),
                 ForeColor = CMuted,
                 Text = ""
             };
             tabStatus.Controls.Add(lblMeta);
 
+            int btnY = 330;
+            int btnW = (innerW - 8 - 24) / 3;
             btnRefresh = MakeBtn("立即刷新", true);
-            btnRefresh.Bounds = new Rectangle(16, 286, 150, 42);
-            btnLog = MakeBtn("打开日志", false);
-            btnLog.Bounds = new Rectangle(180, 286, 150, 42);
+            btnRefresh.Bounds = new Rectangle(20, btnY, btnW, 44);
+            btnLog = MakeBtn("日志", false);
+            btnLog.Bounds = new Rectangle(20 + btnW + 12, btnY, btnW, 44);
             btnHide = MakeBtn("隐藏到托盘", false);
-            btnHide.Bounds = new Rectangle(344, 286, 150, 42);
+            btnHide.Bounds = new Rectangle(20 + (btnW + 12) * 2, btnY, btnW, 44);
             tabStatus.Controls.Add(btnRefresh);
             tabStatus.Controls.Add(btnLog);
             tabStatus.Controls.Add(btnHide);
 
             lblProgress = new Label
             {
-                Bounds = new Rectangle(16, 340, 490, 56),
-                Font = new Font("Microsoft YaHei UI", 9.5f),
+                Bounds = new Rectangle(20, btnY + 60, innerW - 8, 80),
+                Font = new Font("Microsoft YaHei UI", 10f),
                 ForeColor = CBlue,
                 Text = "提示：关闭窗口会缩到托盘，不会退出。"
             };
@@ -389,14 +391,13 @@ namespace GitHubHostsAuto
 
             var hint = new Label
             {
-                Bounds = new Rectangle(16, 400, 490, 36),
-                Font = new Font("Microsoft YaHei UI", 8.5f),
+                Bounds = new Rectangle(20, btnY + 150, innerW - 8, 50),
+                Font = new Font("Microsoft YaHei UI", 9f),
                 ForeColor = CMuted,
-                Text = "退出请用托盘菜单「退出」。开机自启：托盘菜单勾选「开机自动启动」。"
+                Text = "退出：托盘菜单「退出」。开机自启：托盘菜单勾选「开机自动启动」。"
             };
             tabStatus.Controls.Add(hint);
 
-            // ---- tab 版本说明 ----
             var tabAbout = new TabPage("版本说明");
             tabAbout.BackColor = CBg;
             var about = new TextBox
@@ -407,38 +408,33 @@ namespace GitHubHostsAuto
                 BorderStyle = BorderStyle.None,
                 BackColor = CBg,
                 ForeColor = CText,
-                Font = new Font("Microsoft YaHei UI", 10f),
-                Bounds = new Rectangle(20, 16, 490, 380),
+                Font = new Font("Microsoft YaHei UI", 10.5f),
+                Bounds = new Rectangle(20, 16, innerW - 12, H - 180),
                 Text =
                     "当前版本：v" + Version + "\r\n\r\n" +
+                    "【v1.3.0】\r\n" +
+                    "· 布局放宽，修复文字遮挡\r\n" +
+                    "· 自动检查间隔改为 30 秒\r\n" +
+                    "· 「立即刷新」强制重新探测并切换 IP（不再因已正常而跳过）\r\n" +
+                    "· 进度提示显示更完整\r\n\r\n" +
                     "【v1.2.0】\r\n" +
-                    "· 界面改为「状态 / 版本说明」双页签，修复遮挡\r\n" +
-                    "· 「立即刷新」增加进度提示，避免看起来像没反应\r\n" +
-                    "· 健康检查全面改用 curl，减少误报\r\n" +
-                    "· 窗口加高，按钮不再被裁切\r\n\r\n" +
+                    "· 状态 / 版本说明双页签\r\n" +
+                    "· 刷新进度反馈\r\n" +
+                    "· 健康检查改用 curl\r\n\r\n" +
                     "【v1.1.0】\r\n" +
-                    "· 现代化深色顶栏界面\r\n" +
-                    "· 自动探测可用 GitHub IP 并写入 hosts\r\n" +
-                    "· 托盘常驻，关闭窗口不退出\r\n" +
-                    "· 支持开机自启\r\n\r\n" +
+                    "· 托盘常驻、自动探测 IP、写入 hosts\r\n\r\n" +
                     "【v1.0.0】\r\n" +
                     "· 首个单文件桌面版\r\n\r\n" +
-                    "【工作原理】\r\n" +
-                    "1. 用 curl 探测候选 IP（网页 + git 协议）\r\n" +
-                    "2. 拒绝返回 200 但内容是假 OK 的中间盒\r\n" +
-                    "3. 写入 hosts 的 # BEGIN GITHUB FIX 段\r\n" +
-                    "4. flushdns 后确认 git ls-remote 可用\r\n\r\n" +
                     "【说明】\r\n" +
-                    "· 修改 hosts 需要管理员权限\r\n" +
-                    "· IP 会被网络间歇干扰，不是永久方案\r\n" +
-                    "· 长期稳定建议使用代理\r\n"
+                    "· hosts 生效后 github.com 会解析到固定 IP\r\n" +
+                    "· 「立即刷新」会重新扫描并尝试切换到其它可用 IP\r\n" +
+                    "· 修改 hosts 需要管理员权限\r\n"
             };
             tabAbout.Controls.Add(about);
 
             tabs.TabPages.Add(tabStatus);
             tabs.TabPages.Add(tabAbout);
             f.Controls.Add(tabs);
-
             return f;
         }
 
@@ -806,7 +802,7 @@ namespace GitHubHostsAuto
             try
             {
                 SetBusy(true, "刷新中…");
-                SetProgress("正在探测可用 GitHub IP，请稍候…", CBlue);
+                SetProgress("正在强制探测可用 GitHub IP，请稍候…", CBlue);
                 if (!silent)
                 {
                     try { _tabs.SelectedIndex = 0; } catch { }
@@ -823,29 +819,42 @@ namespace GitHubHostsAuto
                         return;
                     }
 
-                    string detail;
-                    if (IsSystemHealthy(out detail))
-                    {
-                        msg = "当前已正常（" + CurrentIp() + "），无需切换。";
-                        Log("already healthy, skip");
-                        return;
-                    }
-
                     string cur = CurrentIp();
-                    Log("unhealthy " + (cur ?? "null") + " (" + detail + "), probing...");
-                    newIp = FindGitHubIp(cur);
-                    if (newIp == null)
+                    Log("force refresh, current=" + (cur ?? "null"));
+
+                    // Always re-probe. Prefer a different IP so "立即刷新" visibly switches.
+                    string found = FindGitHubIp(cur);
+                    if (found == null)
+                        found = FindGitHubIp(null);
+                    if (found == null)
                     {
                         msg = "未能找到可用 IP，请检查网络后重试。";
                         Log("no working IP");
                         return;
                     }
+
+                    if (found == cur)
+                    {
+                        // rewrite same IP to confirm hosts is applied
+                        string rawSame = FindRawIp();
+                        if (WriteHosts(found, rawSame))
+                        {
+                            msg = "hosts 已确认写入：" + found + "（当前已是该 IP，无需切换）";
+                            Log("hosts confirmed same ip " + found);
+                        }
+                        else
+                        {
+                            msg = "写入 hosts 失败。";
+                        }
+                        return;
+                    }
+
                     string raw = FindRawIp();
-                    if (WriteHosts(newIp, raw))
+                    if (WriteHosts(found, raw))
                     {
                         IncRefreshCount();
-                        msg = "已切换 IP：" + cur + " → " + newIp;
-                        Log("switched " + cur + " -> " + newIp);
+                        msg = "已切换 IP：" + cur + " → " + found;
+                        Log("switched " + cur + " -> " + found);
                     }
                     else
                     {
@@ -858,7 +867,7 @@ namespace GitHubHostsAuto
                 UpdateUi(st);
 
                 if (st.Healthy)
-                    SetProgress(msg ?? ("完成。当前 IP：" + st.Ip), COk);
+                    SetProgress((msg ?? "刷新完成") + "\r\n当前解析：" + st.Ip + "  ·  " + st.Detail, COk);
                 else
                     SetProgress(msg ?? ("仍异常：" + st.Detail), CBad);
 
@@ -867,7 +876,7 @@ namespace GitHubHostsAuto
                     if (st.Healthy)
                         Balloon(msg ?? "刷新完成", ToolTipIcon.Info);
                     else
-                        Balloon(msg ?? "刷新后仍异常，请看进度提示", ToolTipIcon.Warning);
+                        Balloon(msg ?? "刷新后仍异常", ToolTipIcon.Warning);
                 }
             }
             finally
