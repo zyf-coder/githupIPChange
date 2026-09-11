@@ -64,7 +64,7 @@ namespace GitHubHostsAuto
         private const string HostsPath = @"C:\Windows\System32\drivers\etc\hosts";
         private const string AppTitle = "GitHub 自动刷新";
         private const string CurlPath = @"C:\Windows\System32\curl.exe";
-        private const string Version = "1.3.1";
+        private const string Version = "1.3.2";
         private const int IntervalSec = 30;
 
         private static readonly string[] ProbeIps =
@@ -627,7 +627,7 @@ namespace GitHubHostsAuto
                 12000) ?? "").Trim();
             if (htmlCode != "200" && htmlCode != "301" && htmlCode != "302")
             {
-                detail = "网页 HTTPS 失败 (http=" + (htmlCode.Length == 0 ? "timeout" : htmlCode) + ")";
+                detail = "网页失败 (http=" + (htmlCode.Length == 0 ? "超时" : htmlCode) + ")";
                 return false;
             }
             string apiCode = (Curl(
@@ -635,16 +635,16 @@ namespace GitHubHostsAuto
                 10000) ?? "").Trim();
             if (apiCode != "200")
             {
-                detail = "API 失败 (http=" + (apiCode.Length == 0 ? "timeout" : apiCode) + ")";
+                detail = "API 失败 (http=" + (apiCode.Length == 0 ? "超时" : apiCode) + ")";
                 return false;
             }
             string ip = CurrentIp();
             if (!string.IsNullOrEmpty(ip) && TestGitReal(ip))
             {
-                detail = "网页 / API / git 协议均正常";
+                detail = "网页 / API / git 正常";
                 return true;
             }
-            detail = "网页与 API 正常（git 探测超时）";
+            detail = "网页与 API 正常";
             return true;
         }
 
@@ -778,7 +778,7 @@ namespace GitHubHostsAuto
             }
 
             _lblMeta.Text = string.Format(
-                "权限：{0}　　自动切换：{1} 次　　间隔：{2} 秒\r\n最后检查：{3:HH:mm:ss}　　版本：v{4}",
+                "权限：{0}　切换：{1} 次　间隔：{2}s\r\n检查：{3:HH:mm:ss}　v{4}",
                 st.Admin ? "管理员" : "非管理员",
                 st.RefreshCount,
                 IntervalSec,
