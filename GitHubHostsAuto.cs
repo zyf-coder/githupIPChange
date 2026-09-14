@@ -64,8 +64,8 @@ namespace GitHubHostsAuto
         private const string HostsPath = @"C:\Windows\System32\drivers\etc\hosts";
         private const string AppTitle = "GitHub 自动刷新";
         private const string CurlPath = @"C:\Windows\System32\curl.exe";
-        private const string Version = "1.3.4";
-        private const int IntervalSec = 30;
+        private const string Version = "1.3.5";
+        private const int IntervalSec = 2;
 
         private static readonly string[] ProbeIps =
         {
@@ -819,16 +819,16 @@ namespace GitHubHostsAuto
         private bool IsSystemHealthy(out string detail)
         {
             string htmlCode = (Curl(
-                "-sS --http1.1 --connect-timeout 3 --max-time 6 -A \"Mozilla/5.0\" -o NUL -w %{http_code} https://github.com/",
-                12000) ?? "").Trim();
+                "-sS --http1.1 --connect-timeout 1 --max-time 2 -A \"Mozilla/5.0\" -o NUL -w %{http_code} https://github.com/",
+                3000) ?? "").Trim();
             if (htmlCode != "200" && htmlCode != "301" && htmlCode != "302")
             {
                 detail = "网页失败 (http=" + (htmlCode.Length == 0 ? "超时" : htmlCode) + ")";
                 return false;
             }
             string apiCode = (Curl(
-                "-sS --http1.1 --connect-timeout 2 --max-time 5 -o NUL -w %{http_code} https://api.github.com/",
-                10000) ?? "").Trim();
+                "-sS --http1.1 --connect-timeout 1 --max-time 2 -o NUL -w %{http_code} https://api.github.com/",
+                3000) ?? "").Trim();
             if (apiCode != "200")
             {
                 detail = "API 失败 (http=" + (apiCode.Length == 0 ? "超时" : apiCode) + ")";
