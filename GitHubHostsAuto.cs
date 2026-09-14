@@ -64,15 +64,15 @@ namespace GitHubHostsAuto
         private const string HostsPath = @"C:\Windows\System32\drivers\etc\hosts";
         private const string AppTitle = "GitHub 自动刷新";
         private const string CurlPath = @"C:\Windows\System32\curl.exe";
-        private const string Version = "1.3.3";
+        private const string Version = "1.3.4";
         private const int IntervalSec = 30;
 
         private static readonly string[] ProbeIps =
         {
+            "140.82.112.4","140.82.113.4","140.82.114.3","140.82.114.4",
+            "140.82.121.3","140.82.121.4","140.82.112.3","140.82.113.3",
             "20.87.245.0","4.208.26.197","20.27.177.113","20.233.83.145",
-            "140.82.121.4","20.200.245.247","20.201.28.151","20.207.73.82",
-            "140.82.113.22","140.82.114.22","20.201.28.150","20.207.73.84",
-            "20.205.243.166","20.205.243.164"
+            "20.200.245.247","20.201.28.151","20.207.73.82","20.205.243.166"
         };
 
         private static readonly string[] RawIps =
@@ -789,7 +789,7 @@ namespace GitHubHostsAuto
         private static bool TestGitReal(string ip)
         {
             string body = Curl(
-                "-sS --http1.1 --connect-timeout 3 --max-time 6 " +
+                "-sS --http1.1 --connect-timeout 2 --max-time 4 " +
                 "-A \"git/2.22.0.windows.1\" " +
                 "--resolve github.com:443:" + ip + " " +
                 "\"https://github.com/git/git.git/info/refs?service=git-upload-pack\"",
@@ -800,7 +800,7 @@ namespace GitHubHostsAuto
         private static bool TestHtmlReal(string ip)
         {
             string body = Curl(
-                "-sS --http1.1 --connect-timeout 3 --max-time 8 -A \"Mozilla/5.0\" " +
+                "-sS --http1.1 --connect-timeout 2 --max-time 5 -A \"Mozilla/5.0\" " +
                 "--resolve github.com:443:" + ip + " https://github.com/",
                 12000);
             return !string.IsNullOrEmpty(body) && body.Length > 4000;
@@ -809,7 +809,7 @@ namespace GitHubHostsAuto
         private static bool TestRawReal(string ip)
         {
             string body = Curl(
-                "-sS --http1.1 --connect-timeout 3 --max-time 6 " +
+                "-sS --http1.1 --connect-timeout 2 --max-time 4 " +
                 "--resolve raw.githubusercontent.com:443:" + ip + " " +
                 "https://raw.githubusercontent.com/git/git/master/README.md",
                 10000);
@@ -819,7 +819,7 @@ namespace GitHubHostsAuto
         private bool IsSystemHealthy(out string detail)
         {
             string htmlCode = (Curl(
-                "-sS --http1.1 --connect-timeout 4 --max-time 10 -A \"Mozilla/5.0\" -o NUL -w %{http_code} https://github.com/",
+                "-sS --http1.1 --connect-timeout 3 --max-time 6 -A \"Mozilla/5.0\" -o NUL -w %{http_code} https://github.com/",
                 12000) ?? "").Trim();
             if (htmlCode != "200" && htmlCode != "301" && htmlCode != "302")
             {
@@ -827,7 +827,7 @@ namespace GitHubHostsAuto
                 return false;
             }
             string apiCode = (Curl(
-                "-sS --http1.1 --connect-timeout 3 --max-time 8 -o NUL -w %{http_code} https://api.github.com/",
+                "-sS --http1.1 --connect-timeout 2 --max-time 5 -o NUL -w %{http_code} https://api.github.com/",
                 10000) ?? "").Trim();
             if (apiCode != "200")
             {
@@ -880,7 +880,7 @@ namespace GitHubHostsAuto
             sb.AppendLine(BeginTag);
             sb.AppendLine(githubIp + " github.com");
             sb.AppendLine(githubIp + " www.github.com");
-            sb.AppendLine("20.205.243.168 api.github.com");
+            sb.AppendLine("140.82.112.6 api.github.com");
             sb.AppendLine("20.205.243.165 codeload.github.com");
             sb.AppendLine(rawIp + " raw.githubusercontent.com");
             sb.AppendLine("185.199.109.215 github.githubassets.com");
