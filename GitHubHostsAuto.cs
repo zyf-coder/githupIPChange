@@ -64,7 +64,7 @@ namespace GitHubHostsAuto
         private const string HostsPath = @"C:\Windows\System32\drivers\etc\hosts";
         private const string AppTitle = "GitHub 自动刷新";
         private const string CurlPath = @"C:\Windows\System32\curl.exe";
-        private const string Version = "1.3.5";
+        private const string Version = "1.3.6";
         private const int IntervalSec = 2;
 
         private static readonly string[] ProbeIps =
@@ -100,7 +100,8 @@ namespace GitHubHostsAuto
         private readonly ToolStripMenuItem _miStatus, _miAutoStart;
         private readonly string _logPath, _statePath, _dataDir;
         private readonly Icon _appIcon;
-        private bool _checking, _exit;
+        private bool _checking, _exit;
+        private DateTime _nextAutoRefresh = DateTime.MinValue;
 
         public TrayApp()
         {
@@ -1016,11 +1017,12 @@ namespace GitHubHostsAuto
                     string found = FindGitHubIp(cur);
                     if (found == null)
                         found = FindGitHubIp(null);
-                    if (found == null)
-                    {
-                        msg = "未能找到可用 IP，请检查网络后重试。";
-                        Log("no working IP");
-                        return;
+                    if (found == null)
+                    {
+                        _nextAutoRefresh = DateTime.Now.AddSeconds(30);
+                        msg = "当前网络下未找到可用 IP，30 秒后自动重试。";
+                        Log("no working IP, backoff 30s");
+                        return;
                     }
 
                     if (found == cur)
@@ -1086,12 +1088,19 @@ namespace GitHubHostsAuto
                 UpdateUi(st);
                 if (!st.Healthy)
                 {
+                    if (DateTime.Now < _nextAutoRefresh)
+                    {
+                        int wait = Math.Max(0, (int)(_nextAutoRefresh - DateTime.Now).TotalSeconds);
+                        SetProgress("网络异常，等待可用 IP…（" + wait + " 秒后重试）", CWarn);
+                        return;
+                    }
                     Log("tick fail (" + st.Detail + "), auto refresh", "WARN");
                     SetProgress("定时检查异常，正在自动切换…", CWarn);
                     _checking = false;
                     await RefreshAsync(true);
                     return;
                 }
+                _nextAutoRefresh = DateTime.MinValue;
                 SetProgress("提示：关闭窗口会缩到托盘，不会退出。", CBlue);
             }
             catch (Exception ex)
